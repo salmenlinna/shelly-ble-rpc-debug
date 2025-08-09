@@ -9,7 +9,7 @@ This script can scan for nearby Shelly devices, connect over BLE, send a single 
 ### Clone from GitHub
 
 ```bash
-git clone https://github.com/salmenlinna/shelly-ble-rpc-debug.git .
+git clone https://github.com/salmenlinna/shelly-ble-rpc-debug.git
 cd shelly-ble-rpc-debug
 ```
 
