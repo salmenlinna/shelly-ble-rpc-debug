@@ -1,5 +1,5 @@
 {
-  "name": "ble-issue",
+  "name": "shelly-ble-rpc-debug",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",

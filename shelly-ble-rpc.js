@@ -516,7 +516,7 @@ async function main() {
     let currentParams = initialParamsObject;
     while (true) {
       if (!currentMethod) {
-        const m = await prompt.question('Enter RPC method (empty to exit): ');
+        const m = await prompt.question('Enter RPC method. E.g. Shelly.ListMethods. (empty to exit): ');
         currentMethod = (m || '').trim();
         if (!currentMethod) { requestedExit = true; break; }
         const p = await prompt.question('Enter params JSON (optional, default {}): ');
@@ -532,7 +532,7 @@ async function main() {
       }
 
       // Ask for next method
-      const next = await prompt.question('Next RPC method (empty to exit): ');
+      const next = await prompt.question('Next RPC method. E.g. Shelly.ListMethods. (empty to exit): ');
       if (!next || !next.trim()) { requestedExit = true; break; }
       currentMethod = next.trim();
       const nextParams = await prompt.question('Params JSON (optional, default {}): ');
