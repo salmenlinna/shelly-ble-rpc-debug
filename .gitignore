@@ -10,16 +10,7 @@ lerna-debug.log*
 .DS_Store
 Thumbs.db
 .DS_Store?
-ehthumbs.db
 Icon?
-Thumbs.db?
-ehthumbs.db?
-Icon?
-Thumbs.db?
-ehthumbs.db?
-Icon?
-Thumbs.db?
-ehthumbs.db?
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
