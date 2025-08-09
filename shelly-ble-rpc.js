@@ -33,14 +33,12 @@ const UUID_DATA = normalizeUuid(RPC_CHAR_DATA_UUID);
 const UUID_TXCTL = normalizeUuid(RPC_CHAR_TX_CTL_UUID);
 const UUID_RXCTL = normalizeUuid(RPC_CHAR_RX_CTL_UUID);
 
-let nextRequestId = 1;
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function parseArgs(argv) {
-  const args = { address: null, name: null, method: null, params: null, scan: false, clean: false };
+  const args = { address: null, name: null, method: null, params: null, scan: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--address' && argv[i + 1]) {
@@ -57,8 +55,6 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === '--scan') {
       args.scan = true;
-    } else if (arg === '--clean') {
-      args.clean = true;
     }
   }
   return args;
@@ -182,40 +178,23 @@ async function subscribeNotifications(characteristic, onData) {
 }
 
 async function flushChannels(rxCtlChar, dataChar) {
-  // Drain any pending response(s) from previous sessions
-  console.log('Flushing channels (RX_CTL/DATA) if stale data exists...');
-  const maxCycles = 5;
-  for (let cycle = 1; cycle <= maxCycles; cycle += 1) {
-    let len = 0;
-    try {
-      const lenBuf = await readCharacteristic(rxCtlChar);
-      if (lenBuf && lenBuf.length >= 4) {
-        len = lenBuf.readUInt32BE(0);
-      }
-    } catch (_) {}
-    if (!len) {
-      console.log(`Flush cycle ${cycle}: RX_CTL=0`);
-      break;
-    }
-    console.log(`Flush cycle ${cycle}: RX_CTL=${len}, draining DATA...`);
-    let drained = 0;
-    const deadline = Date.now() + 2000;
-    while (drained < len && Date.now() < deadline) {
-      try {
-        const chunk = await readCharacteristic(dataChar);
-        const cLen = chunk ? chunk.length : 0;
-        if (!cLen) {
-          await sleep(50);
-          continue;
+  // Minimal drain of one pending frame if present; keep simple
+  try {
+    const lenBuf = await readCharacteristic(rxCtlChar);
+    if (lenBuf && lenBuf.length >= 4) {
+      const len = lenBuf.readUInt32BE(0);
+      if (len > 0) {
+        let drained = 0;
+        const deadline = Date.now() + 1000;
+        while (drained < len && Date.now() < deadline) {
+          const chunk = await readCharacteristic(dataChar);
+          const cLen = chunk ? chunk.length : 0;
+          if (!cLen) break;
+          drained += cLen;
         }
-        drained += cLen;
-        console.log(`  Drained ${cLen} bytes (total ${drained}/${len})`);
-      } catch (_) {
-        await sleep(50);
       }
     }
-    await sleep(100);
-  }
+  } catch (_) {}
 }
 
 async function sendRpcAndReceive(peripheral, method, paramsObject) {
@@ -224,17 +203,6 @@ async function sendRpcAndReceive(peripheral, method, paramsObject) {
   });
 
   try {
-    // Optional clean handshake: disconnect and reconnect to clear any stale notifications/buffers
-    if (process.env.CLEAN_FIRST === '1') {
-      console.log('Clean handshake: disconnecting briefly to clear channels...');
-      try { peripheral.disconnect(); } catch (_) {}
-      await sleep(300);
-      await new Promise((resolve, reject) => {
-        peripheral.connect((err) => (err ? reject(err) : resolve()));
-      });
-      await sleep(300);
-    }
-
     // Verify connection is stable
     await sleep(500);
     
@@ -286,15 +254,9 @@ async function sendRpcAndReceive(peripheral, method, paramsObject) {
     // Subscribe to RX control notifications to capture response length if device notifies
     let expectedLength = 0;
     let received = Buffer.alloc(0);
-    console.log('Setting up RX_CTL notifications for response length...');
     const unsubscribeRxNotify = await subscribeNotifications(rxCtlChar, (buf) => {
       if (!buf || buf.length < 4) return;
-      const len = buf.readUInt32BE(0);
-      // Some devices may notify 0 multiple times before the real length
-      if (len !== expectedLength) {
-        expectedLength = len;
-        console.log(`RX_CTL notify: expecting ${expectedLength} bytes`);
-      }
+      expectedLength = buf.readUInt32BE(0);
     });
 
     let requestObject = {
@@ -329,7 +291,7 @@ async function sendRpcAndReceive(peripheral, method, paramsObject) {
     }
 
     // Poll RX_CTL length as per docs (in addition to notifications)
-    console.log('Reading response length from RX_CTL (doc flow)...');
+    console.log('Reading response length from RX_CTL...');
     for (let i = 1; i <= 30 && expectedLength === 0; i++) {
       try {
         const lenBuf = await readCharacteristic(rxCtlChar);
@@ -492,14 +454,22 @@ async function promptUserSelection(devices) {
   });
 }
 
+function createPrompt() {
+  const readline = require('readline');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const question = (q) => new Promise((resolve) => rl.question(q, (ans) => resolve(ans)));
+  const close = () => rl.close();
+  return { question, close };
+}
+
 async function main() {
-  const { address, name, method: methodArg, params: paramsArg, scan, clean } = parseArgs(process.argv);
-  const method = methodArg || process.env.METHOD || 'Shelly.GetStatus';
-  const paramsObject = paramsArg ? tryParseJson(paramsArg) : null;
-  
-  console.log(`Method: ${method}`);
-  if (paramsObject) console.log('With params:', paramsObject);
-  if (clean || process.env.CLEAN_FIRST === '1') console.log('Clean mode enabled (disconnect/reconnect before request)');
+  const { address, name, method: methodArg, params: paramsArg, scan } = parseArgs(process.argv);
+  let initialMethod = methodArg || process.env.METHOD || '';
+  let initialParamsObject = paramsArg ? tryParseJson(paramsArg) : null;
+  if (initialMethod) {
+    console.log(`Method: ${initialMethod}`);
+    if (initialParamsObject) console.log('With params:', initialParamsObject);
+  }
 
   await new Promise((resolve) => {
     noble.once('stateChange', (state) => {
@@ -538,15 +508,40 @@ async function main() {
 
   console.log(`Connecting to: ${peripheral.advertisement?.localName || '(no name)'} [${peripheral.address || peripheral.id}]`);
 
+  // Interactive loop: if no method provided, prompt; after each response, prompt again
+  const prompt = createPrompt();
+  let requestedExit = false;
   try {
-    const response = await sendRpcAndReceive(peripheral, method, paramsObject);
-    console.log('RPC response:');
-    console.log(JSON.stringify(response, null, 2));
-  } catch (err) {
-    console.error('Error:', err.message || err);
-    process.exitCode = 1;
+    let currentMethod = initialMethod;
+    let currentParams = initialParamsObject;
+    while (true) {
+      if (!currentMethod) {
+        const m = await prompt.question('Enter RPC method (empty to exit): ');
+        currentMethod = (m || '').trim();
+        if (!currentMethod) { requestedExit = true; break; }
+        const p = await prompt.question('Enter params JSON (optional, default {}): ');
+        currentParams = p && p.trim() ? tryParseJson(p) : {};
+      }
+
+      try {
+        const response = await sendRpcAndReceive(peripheral, currentMethod, currentParams || {});
+        console.log('RPC response:');
+        console.log(JSON.stringify(response, null, 2));
+      } catch (err) {
+        console.error('Error:', err.message || err);
+      }
+
+      // Ask for next method
+      const next = await prompt.question('Next RPC method (empty to exit): ');
+      if (!next || !next.trim()) { requestedExit = true; break; }
+      currentMethod = next.trim();
+      const nextParams = await prompt.question('Params JSON (optional, default {}): ');
+      currentParams = nextParams && nextParams.trim() ? tryParseJson(nextParams) : {};
+    }
   } finally {
+    try { prompt.close(); } catch (_) {}
     try { noble.stopScanning(); } catch (_) {}
+    if (requestedExit) process.exit(0);
   }
 }
 
