@@ -1,8 +1,17 @@
-### Shelly BLE RPC Tester (Node.js)
+### Shelly BLE tool (Node.js)
 
 Minimal CLI tool to send JSON‑RPC commands to Shelly Gen2/Gen3 devices over Bluetooth Low Energy using `@abandonware/noble`.
 
 This script can scan for nearby Shelly devices, connect over BLE, send a single RPC request (default `Shelly.GetStatus`), print the parsed JSON response, and optionally keep prompting for further RPCs.
+
+---
+
+### Clone from GitHub
+
+```bash
+git clone https://github.com/salmenlinna/shelly-ble-rpc-debug.git .
+cd shelly-ble-rpc-debug
+```
 
 ---
 
@@ -23,7 +32,7 @@ On Linux, make sure Bluetooth services are running and your user has access. In 
 1) Change to the project directory:
 
 ```bash
-cd BLE-testing
+cd shelly-ble-rpc-debug
 ```
 
 2) Install dependencies:
@@ -39,14 +48,14 @@ npm install
 Start the interactive scanner (default behavior if no address or name is provided):
 
 ```bash
-cd /Users/samuel.salmenlinna/DEV/shelly-testing/BLE-issue
+cd shelly-ble-rpc-debug
 npm start
 ```
 
 Or run directly with Node:
 
 ```bash
-cd /Users/samuel.salmenlinna/DEV/shelly-testing/BLE-issue
+cd shelly-ble-rpc-debug
 node shelly-ble-rpc.js
 ```
 
